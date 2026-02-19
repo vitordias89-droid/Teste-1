@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Painel Global Consolidado (Pareto • Risco • Portfólio)</title>
+
+  <!-- Plotly (gráficos) -->
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <!-- SheetJS (ler Excel no navegador) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
+
+  <style>
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#0b1220;color:#e9eefc}
+    header{position:sticky;top:0;background:rgba(11,18,32,.92);backdrop-filter:blur(10px);padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08);z-index:10}
+    h1{margin:0;font-size:18px}
+    .meta{color:#9fb0d0;font-size:12px;margin-top:4px;line-height:1.4}
+    .container{max-width:1400px;margin:0 auto;padding:14px 18px 36px}
+    .grid{display:grid;gap:12px}
+    .kpis{grid-template-columns:repeat(6,minmax(0,1fr))}
+    .row2{grid-template-columns:1.25fr .75fr}
+    .row3{grid-template-columns:1fr 1fr}
+    .card{background:#111a2e;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:12px}
+    .kpi .l{color:#9fb0d0;font-size:12px}
+    .kpi .v{font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .tab{padding:8px 10px;border:1px solid rgba(255,255,255,.18);border-radius:999px;color:#9fb0d0;cursor:pointer;user-select:none}
+    .tab.active{color:#e9eefc;border-color:rgba(94,234,212,.45);background:rgba(94,234,212,.10)}
+    .hidden{display:none}
+    .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    select,input{background:#0b1220;color:#e9eefc;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:9px;font-size:12px}
+    .tablewrap{overflow:auto;border:1px solid rgba(255,255,255,.10);border-radius:14px}
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th,td{padding:8px 9px;border-bottom:1px solid rgba(255,255,255,.06);text-align:left;vertical-align:top}
+    th{position:sticky;top:0;background:#0b1220}
+    .note{color:#9fb0d0;font-size:12px;line-height:1.4}
+    .badge{display:inline-flex;gap:6px;align-items:center;padding:5px 9px;border-radius:999px;border:1px solid rgba(255,255,255,.18);font-size:12px}
+    .ok{background:rgba(110,231,183,.12);border-color:rgba(110,231,183,.3)}
+    .warn{background:rgba(255,209,102,.12);border-color:rgba(255,209,102,.3)}
+    .bad{background:rgba(255,107,107,.12);border-color:rgba(255,107,107,.3)}
+    @media(max-width:1100px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.row2,.row3{grid-template-columns:1fr}}
+  </style>
+</head>
+
+<body>
+<header>
+  <h1>Painel Global – Consolidado (Pareto • Risco • Portfólio)</h1>
+  <div class="meta">
+    1) Selecione os arquivos abaixo (Excel gerados). 2) O painel carrega tudo e monta gráficos/tabelas.<br/>
+    <b>Arquivos:</b> 01_Estrategico_Indice_Risco_Por_Marca.xlsx e 02_Otimizacao_Portfolio_SKUs.xlsx
+  </div>
+
+  <div class="controls" style="margin-top:10px">
+    <label class="badge"><span>Estratégico (Risco)</span> <input id="fileRisk" type="file" accept=".xlsx,.xls"/></label>
+    <label class="badge"><span>Portfólio (SKUs)</span> <input id="fileSku" type="file" accept=".xlsx,.xls"/></label>
+    <span id="status" class="badge warn">Aguardando arquivos…</span>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="visao">Visão Geral</div>
+    <div class="tab" data-tab="risco">Risco</div>
+    <div class="tab" data-tab="portfolio">Portfólio</div>
+    <div class="tab" data-tab="sim">Simulação</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- VISÃO GERAL -->
+  <section id="visao" class="panel">
+    <div class="grid kpis">
+      <div class="card kpi"><div class="l">Faturamento Total</div><div class="v" id="k_rev">—</div></div>
+      <div class="card kpi"><div class="l">M. Contribuição</div><div class="v" id="k_mc">—</div></div>
+      <div class="card kpi"><div class="l">Lucro</div><div class="v" id="k_profit">—</div></div>
+      <div class="card kpi"><div class="l">Marcas</div><div class="v" id="k_brands">—</div></div>
+      <div class="card kpi"><div class="l">SKUs</div><div class="v" id="k_skus">—</div></div>
+      <div class="card kpi"><div class="l">Perfil de Risco</div><div class="v" id="k_risk">—</div></div>
+    </div>
+
+    <div class="grid row3" style="margin-top:12px">
+      <div class="card">
+        <div class="note">Faturamento por Classe ABC (global)</div>
+        <div id="c_class" style="height:320px"></div>
+      </div>
+      <div class="card">
+        <div class="note">Faturamento por Ação Sugerida (global)</div>
+        <div id="c_act" style="height:320px"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RISCO -->
+  <section id="risco" class="panel hidden">
+    <div class="controls" style="margin-bottom:10px">
+      <select id="riskFilter">
+        <option value="ALL">Todas</option>
+        <option value="ALTO">ALTO</option>
+        <option value="MÉDIO">MÉDIO</option>
+        <option value="BAIXO">BAIXO</option>
+      </select>
+      <input id="riskSearch" placeholder="Buscar…"/>
+    </div>
+
+    <div class="grid row2">
+      <div class="card"><div class="note">Marcas por nível</div><div id="c_risk_counts" style="height:320px"></div></div>
+      <div class="card"><div class="note">Drivers (share do líder x concentração Classe A)</div><div id="c_risk_scatter" style="height:320px"></div></div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="note">Tabela – Índice de risco</div>
+      <div class="tablewrap" style="max-height:560px"><table id="t_risk"></table></div>
+    </div>
+  </section>
+
+  <!-- PORTFÓLIO -->
+  <section id="portfolio" class="panel hidden">
+    <div class="controls" style="margin-bottom:10px">
+      <select id="bFilter"></select>
+      <select id="cFilter">
+        <option value="ALL">ABC: Todas</option>
+        <option value="A">A</option><option value="B">B</option><option value="C">C</option>
+      </select>
+      <select id="aFilter"></select>
+      <input id="skuSearch" placeholder="Buscar SKU/código/produto…"/>
+    </div>
+
+    <div class="grid row3">
+      <div class="card"><div class="note">Classe ABC (filtros aplicados)</div><div id="c_p_class" style="height:320px"></div></div>
+      <div class="card"><div class="note">Ações sugeridas (filtros aplicados)</div><div id="c_p_act" style="height:320px"></div></div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="note">Tabela – SKUs (renderiza 1.000 linhas por vez; use filtros/pesquisa)</div>
+      <div class="tablewrap" style="max-height:600px"><table id="t_sku"></table></div>
+    </div>
+  </section>
+
+  <!-- SIMULAÇÃO -->
+  <section id="sim" class="panel hidden">
+    <div class="controls" style="margin-bottom:10px">
+      <input id="simSearch" placeholder="Buscar marca/líder/código…"/>
+    </div>
+
+    <div class="grid row2">
+      <div class="card"><div class="note">Top 20 perdas % (se perder o líder)</div><div id="c_sim" style="height:360px"></div></div>
+      <div class="card">
+        <div class="note">Tabela – Simulação completa</div>
+        <div class="tablewrap" style="max-height:360px"><table id="t_sim"></table></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+let RISK=null, SIM=null, SKU=null;
+
+const brl=v=> (v==null||Number.isNaN(v))?"—":Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const pct=v=> (v==null||Number.isNaN(v))?"—":(Number(v)*100).toFixed(2).replace('.',',')+"%";
+const num=v=> (v==null||Number.isNaN(v))?"—":Number(v).toLocaleString('pt-BR');
+
+function setStatus(text, kind){
+  const s=document.getElementById('status');
+  s.textContent=text;
+  s.classList.remove('ok','warn','bad');
+  s.classList.add(kind);
+}
+
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.add('hidden'));
+  t.classList.add('active');
+  document.getElementById(t.dataset.tab).classList.remove('hidden');
+  window.dispatchEvent(new Event('resize'));
+});
+
+async function readExcel(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array'});
+  const sheets = {};
+  wb.SheetNames.forEach(n=>{
+    const ws = wb.Sheets[n];
+    sheets[n]=XLSX.utils.sheet_to_json(ws, {defval:null});
+  });
+  return sheets;
+}
+
+function table(el, rows, cols, fmt={}){
+  const t=document.getElementById(el);
+  if(!rows || !rows.length){ t.innerHTML='<thead><tr><th>Sem dados</th></tr></thead>'; return; }
+  t.innerHTML = '<thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>'+
+    rows.map(r=>'<tr>'+cols.map(c=>{
+      const v = (fmt[c]?fmt[c](r[c],r): r[c]);
+      const out = (v==null?'—': (typeof v==='number'? v.toLocaleString('pt-BR'): String(v)));
+      return `<td>${out}</td>`;
+    }).join('')+'</tr>').join('') + '</tbody>';
+}
+
+function pickCol(rows, includes){
+  if(!rows || !rows.length) return null;
+  const cols = Object.keys(rows[0]);
+  const inc = includes.map(x=>x.toLowerCase());
+  for(const c of cols){
+    const cl=c.toLowerCase();
+    if(inc.every(k=>cl.includes(k))) return c;
+  }
+  return null;
+}
+
+function sumBy(rows, key, val){
+  const m = new Map();
+  rows.forEach(r=>{
+    const k = r[key] ?? '—';
+    const v = Number(r[val]||0);
+    m.set(k, (m.get(k)||0)+v);
+  });
+  return Array.from(m.entries()).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v);
+}
+
+function renderAll(){
+  if(!RISK || !SIM || !SKU) return;
+
+  const brand = pickCol(SKU, ['marca']) || 'Marca';
+  const rev   = pickCol(SKU, ['fatur']) || 'Faturamento';
+  const cls   = pickCol(SKU, ['classifica']) || 'Classificação Pareto';
+  const act   = pickCol(SKU, ['acao']) || 'Acao_Sugerida';
+  const mc    = pickCol(SKU, ['m.contrib']) || 'M.Contrib.';
+  const profit= pickCol(SKU, ['lucro']) || 'Lucro';
+
+  // KPIs
+  const totalRev = SKU.reduce((s,r)=>s+Number(r[rev]||0),0);
+  const totalMC  = SKU.reduce((s,r)=>s+Number(r[mc]||0),0);
+  const totalPr  = SKU.reduce((s,r)=>s+Number(r[profit]||0),0);
+  k_rev.textContent    = brl(totalRev);
+  k_mc.textContent     = brl(totalMC);
+  k_profit.textContent = brl(totalPr);
+  k_brands.textContent = num(new Set(SKU.map(r=>r[brand])).size);
+  k_skus.textContent   = num(new Set(SKU.map(r=>r['Código'])).size);
+
+  // risco counts
+  const riskLvl = pickCol(RISK, ['nivel','risco']) || 'Nivel_Risco';
+  const counts = new Map();
+  RISK.forEach(r=>{
+    const k=r[riskLvl]||'—';
+    counts.set(k,(counts.get(k)||0)+1);
+  });
+  k_risk.textContent = Array.from(counts.entries()).map(([k,v])=>`${k}:${v}`).join(' • ');
+
+  // Charts: class mix & actions
+  const classAgg = sumBy(SKU, cls, rev);
+  Plotly.newPlot('c_class',[{type:'pie',labels:classAgg.map(d=>d.k),values:classAgg.map(d=>d.v),hole:.55,textinfo:'label+percent'}],
+    {margin:{l:10,r:10,t:10,b:10},paper_bgcolor:'rgba(0,0,0,0)',font:{color:'#e9eefc'}},{displayModeBar:false});
+
+  const actAgg = sumBy(SKU, act, rev).slice(0,12);
+  Plotly.newPlot('c_act',[{type:'bar',x:actAgg.map(d=>d.k),y:actAgg.map(d=>d.v)}],
+    {margin:{l:45,r:10,t:10,b:120},paper_bgcolor:'rgba(0,0,0,0)',font:{color:'#e9eefc'}},{displayModeBar:false});
+
+  // Risk charts
+  const riskCounts = Array.from(counts.entries());
+  Plotly.newPlot('c_risk_counts',[{type:'bar',x:riskCounts.map(d=>d[0]),y:riskCounts.map(d=>d[1])}],
+    {margin:{l:40,r:10,t:10,b:40},paper_bgcolor:'rgba(0,0,0,0)',font:{color:'#e9eefc'}},{displayModeBar:false});
+
+  Plotly.newPlot('c_risk_scatter',[{type:'scatter',mode:'markers',
+    x:RISK.map(d=>Number(d['Lider_%Share']||0)),
+    y:RISK.map(d=>Number(d['%Concentrado_Classe_A']||0)),
+    text:RISK.map(d=>d['Marca']||''),
+    marker:{size:RISK.map(d=>Math.max(8,Math.min(26,Number(d['Indice_Risco_(0-100)']||0)/4)))}
+  }],
+  {margin:{l:45,r:10,t:10,b:45},xaxis:{title:'Share do líder'},yaxis:{title:'Concentração Classe A'},paper_bgcolor:'rgba(0,0,0,0)',font:{color:'#e9eefc'}},{displayModeBar:false});
+
+  // Risk table
+  function updateRiskTable(){
+    const lvl = riskFilter.value;
+    const q = (riskSearch.value||'').toLowerCase().trim();
+    let rows = RISK.slice();
+    if(lvl!=='ALL') rows = rows.filter(r=>String(r[riskLvl]||'')===lvl);
+    if(q) rows = rows.filter(r=>JSON.stringify(r).toLowerCase().includes(q));
+    table('t_risk', rows,
+      ['Marca','Indice_Risco_(0-100)',riskLvl,'Lider_%Share','Top3_%Share','%Concentrado_Classe_A','Lider_Codigo','Lider_Produto'],
+      {
+        'Indice_Risco_(0-100)': v=> (v==null?'—':Number(v).toFixed(1)),
+        'Lider_%Share': v=>pct(v),
+        'Top3_%Share': v=>pct(v),
+        '%Concentrado_Classe_A': v=>pct(v)
+      }
+    );
+  }
+  riskFilter.onchange=updateRiskTable; riskSearch.oninput=updateRiskTable; updateRiskTable();
+
+  // Portfolio filters init
+  const brandList = Array.from(new Set(SKU.map(r=>r[brand]))).sort((a,b)=>String(a).localeCompare(String(b)));
+  bFilter.innerHTML = '<option value="ALL">Todas as marcas</option>' + brandList.map(b=>`<option value="${b}">${b}</option>`).join('');
+  const actList = Array.from(new Set(SKU.map(r=>r[act]))).sort((a,b)=>String(a).localeCompare(String(b)));
+  aFilter.innerHTML = '<option value="ALL">Ações: Todas</option>' + actList.map(a=>`<option value="${a}">${a}</option>`).join('');
+
+  function filterSku(){
+    const b=bFilter.value, c=cFilter.value, a=aFilter.value, q=(skuSearch.value||'').toLowerCase().trim();
+    let rows=SKU.slice();
+    if(b!=='ALL') rows=rows.filter(r=>String(r[brand]||'')===b);
+    if(c!=='ALL') rows=rows.filter(r=>String(r[cls]||'')===c);
+    if(a!=='ALL') rows=rows.filter(r=>String(r[act]||'')===a);
+    if(q) rows=rows.filter(r=>JSON.stringify(r).toLowerCase().includes(q));
+    return rows;
+  }
+  function updateSku(){
+    const rows=filterSku();
+    const byC=sumBy(rows, cls, rev);
+    Plotly.newPlot('c_p_class',[{type:'pie',labels:byC.map(d=>d.k),values:byC.map(d=>d.v),hole:.55,textinfo:'label+percent'}],
+      {margin:{l:10,r:10,t:10,b:10},paper_bgcolor:'rgba(0,0,0,0)',font:{color:'#e9eefc'}},{displayModeBar:false});
+    const byA=sumBy(rows, act, rev).slice(0,12);
+    Plotly.newPlot('c_p_act',[{type:'bar',x:byA.map(d=>d.k),y:byA.map(d=>d.v)}],
+      {margin:{l:45,r:10,t:10,b:120},paper_bgcolor:'rgba(0,0,0,0)',font:{color:'#e9eefc'}},{displayModeBar:false});
+
+    table('t_sku', rows.slice(0,1000),
+      ['Marca','Código','Produtos','Ranking_Marca',cls,rev,'% Representatividade','% Acumulado',mc,profit,act],
+      {
+        [rev]: v=>brl(v),
+        '% Representatividade': v=>pct(v),
+        '% Acumulado': v=>pct(v),
+        [mc]: v=>brl(v),
+        [profit]: v=>brl(v)
+      }
+    );
+  }
+  bFilter.onchange=updateSku; cFilter.onchange=updateSku; aFilter.onchange=updateSku; skuSearch.oninput=updateSku; updateSku();
+
+  // Simulation
+  const simLossCol = pickCol(SIM, ['perda','%','fatur']) || 'Perda_%_Faturamento';
+  const simTop = SIM.slice().sort((a,b)=>Number(b[simLossCol]||0)-Number(a[simLossCol]||0)).slice(0,20);
+  Plotly.newPlot('c_sim',[{type:'bar',x:simTop.map(d=>d['Marca']||''),y:simTop.map(d=>Number(d[simLossCol]||0))}],
+    {margin:{l:45,r:10,t:10,b:120},paper_bgcolor:'rgba(0,0,0,0)',font:{color:'#e9eefc'},yaxis:{tickformat:'.0%'}},{displayModeBar:false});
+
+  function updateSim(){
+    const q=(simSearch.value||'').toLowerCase().trim();
+    let rows=SIM.slice();
+    if(q) rows=rows.filter(r=>JSON.stringify(r).toLowerCase().includes(q));
+    table('t_sim', rows,
+      ['Marca','Lider_Codigo','Lider_Produto','Lider_Faturamento','Perda_%_Faturamento'],
+      {
+        'Lider_Faturamento': v=>brl(v),
+        'Perda_%_Faturamento': v=>pct(v)
+      }
+    );
+  }
+  simSearch.oninput=updateSim; updateSim();
+}
+
+async function tryLoad(){
+  const f1 = fileRisk.files?.[0];
+  const f2 = fileSku.files?.[0];
+  if(!f1 || !f2) return;
+
+  setStatus('Carregando…', 'warn');
+  try{
+    const s1 = await readExcel(f1);
+    const s2 = await readExcel(f2);
+
+    // Estratégico
+    RISK = s1['Indice_Risco'] || s1['Índice_Risco'] || s1[Object.keys(s1)[0]];
+    SIM  = s1['Simulacao_Perda_Lider'] || s1['Simulação_Perda_Lider'] || s1[Object.keys(s1)[1]];
+
+    // Portfólio
+    SKU  = s2['SKUs_Analise'] || s2['SKUs_Análise'] || s2[Object.keys(s2)[0]];
+
+    if(!RISK?.length || !SKU?.length) throw new Error('Abas não encontradas ou vazias.');
+
+    setStatus('Painel pronto ✓', 'ok');
+    renderAll();
+  }catch(e){
+    console.error(e);
+    setStatus('Erro ao carregar (veja Console)', 'bad');
+  }
+}
+
+fileRisk.addEventListener('change', tryLoad);
+fileSku.addEventListener('change', tryLoad);
+</script>
+</body>
+</html>
